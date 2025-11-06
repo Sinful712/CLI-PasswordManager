@@ -1,7 +1,6 @@
 """
 pw_manager_cli.py
 Command-line password manager compatible with the encrypted .pwm database format.
-Uses same Fernet encryption and schema as pw_manager.py (GUI version).
 """
 
 import os
@@ -504,4 +503,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
