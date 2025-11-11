@@ -9,7 +9,9 @@ import json
 import time
 import select
 import base64
+from getpass import getpass
 import random
+import shutil
 import string
 import secrets
 import platform
@@ -23,11 +25,31 @@ from cryptography.fernet import Fernet, InvalidToken
 import pyperclip
 
 # ---------- Constants ----------
+EncryptionIterations = 1_000_000
 SALT_SIZE = 16
 
 
+
+# ----------- Terminal -----------
+
+def center_text(text: str, FILL_CHAR: str = " " , SubPrefix: int = 0, SubSuffix: int = 0):
+    width = shutil.get_terminal_size().columns
+    total_padding = max(width - len(text), 0)
+    left = (total_padding // 2)
+    right = (total_padding - left)
+    print(FILL_CHAR * (left - SubPrefix) + text + FILL_CHAR * (right - SubSuffix))
+
+def set_title(title: str):
+    if platform.system() == "Windows":
+        os.system(f"title {title}")
+    else:
+        sys.stdout.write(f"\x1b]2;{title}\x07")
+        sys.stdout.flush()
+
+
+
 # ---------- Encryption ----------
-def derive_key(password: str, salt: bytes, iterations: int = 200_000) -> bytes:
+def derive_key(password: str, salt: bytes, iterations: int = EncryptionIterations) -> bytes:
     pw = password.encode("utf-8")
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
@@ -75,6 +97,7 @@ class PasswordManagerCLI:
         self.last_action_time = time.time()
         self.lock_timeout = 150  # seconds (2m30s)
         self.locked = False
+        self.autolock_enabled = True
         self.lock_event = threading.Event()
 
     def reset_inactivity_timer(self):
@@ -82,6 +105,10 @@ class PasswordManagerCLI:
 
     def timed_input(self, prompt=">>> "):
         """Regular input with inactivity auto-lock."""
+
+        if self.autolock_enabled != True:
+            return input(prompt)
+
         timeout = self.lock_timeout
         start = time.time()
 
@@ -125,6 +152,10 @@ class PasswordManagerCLI:
 
     def timed_getpass(self, prompt="Password: "):
         """Hidden password input with inactivity auto-lock."""
+
+        if self.autolock_enabled != True:
+            return getpass(prompt)
+
         timeout = self.lock_timeout
         start = time.time()
         buf = ""
@@ -192,9 +223,15 @@ class PasswordManagerCLI:
 
 
     def prompt_master_password(self):
-        print("--- Enter Master Password ---")
+        center_text("Enter Master Password", "-")
         pw = self.timed_getpass(">>> ")
         self.master_password = pw
+
+    def Create_Database_Path(self):
+        Folder_Path = self.db_path.split("\\")[:-1]
+        Folder_Path = "\\".join(Folder_Path) + "\\"
+        if not os.path.exists(Folder_Path):
+            os.mkdir(Folder_Path)
 
     def load_db(self):
         print("\033[2J\033[H", end="") # Clear screen
@@ -204,6 +241,7 @@ class PasswordManagerCLI:
             choice = self.timed_input("Create new database? (y/n): ").strip().lower()
             if choice != "y":
                 exit()
+            self.Create_Database_Path()
             pw1 = self.timed_getpass("Set master password: ")
             pw2 = self.timed_getpass("Confirm master password: ")
             if pw1 != pw2:
@@ -218,8 +256,11 @@ class PasswordManagerCLI:
             self.line_break()
             sleep(1)
         else:
+            set_title(self.db_path.split("\\")[-1])
             if not self.master_password:
-                print("\033[2J\033[H", end="") # Clear screen
+                self.Password_Manager_Break()
+                center_text("Unlock Database", "-")
+                self.Print_Clean_Database()
                 self.prompt_master_password()
             try:
                 self.db = load_file(self.db_path, self.master_password)
@@ -234,7 +275,7 @@ class PasswordManagerCLI:
 
     def save(self):
         print("\033[2J\033[H", end="") # Clear screen
-        print("------ Saving Database -----")
+        center_text("Saving Database", "-")
         save_file(self.db_path, self.db, self.master_password)
         print("Database saved.")
         self.line_break()
@@ -244,10 +285,21 @@ class PasswordManagerCLI:
         if self.locked:
             return
         self.locked = True
-        self.save()
-        print("\033[2J\033[H", end="")
-        print("------- Password Manager -------")
+        
+        try:
+            self.save()
+        except:
+            print("""Due to inactivity at startup,
+the database could not be loaded.
+Exiting...""")
+            self.line_break()
+            sleep(2)
+            exit(1)
+            
+        self.Password_Manager_Break()
         print("Session locked due to inactivity.")
+        self.Print_Clean_Database()
+
         while True:
             self.prompt_master_password()
             try:
@@ -257,16 +309,15 @@ class PasswordManagerCLI:
                 print("Database unlocked.")
                 self.line_break()
                 sleep(1)
-                print("\033[2J\033[H", end="") # Clear screen
-                print("------- Password Manager -------")
+                self.Password_Manager_Break()
                 self.list_entries()
                 print("""
 - Please choose an option: -
-1. Add entry
-2. Edit entry
-3. Delete entry
-4. Copy username
-5. Copy password
+1. Copy password
+2. Copy username
+3. Add entry
+4. Delete entry
+5. Edit entry
 6. Save
 7. Exit
 """)
@@ -299,25 +350,40 @@ class PasswordManagerCLI:
             return self.generate_password(length=int(inputStr))
         except ValueError:
             print("please use numbers.")
-    def line_break(self):
-        print("----------------------------")
+    
+    def Password_Manager_Break(self):
+        print("\033[2J\033[H", end="")
+        center_text("Password Manager", "=")
 
-    def list_entries(self):
-        print("------ Stored Entries ------")
+    def line_break(self):
+        width = shutil.get_terminal_size().columns
+        print("-" * width)
+
+    def Print_Clean_Database(self):
+        cleanDB_Path = self.db_path.split("\\")[-1]
+        print(f"Current Database {cleanDB_Path}.")
+
+    def list_entries(self, no_index=True):
+        center_text("Stored Entries", "-")
         if not self.db:
-            print("No entries in database.")
+            center_text("No entries in database.")
             self.line_break()
             return
         for i, (eid, rec) in enumerate(
             sorted(self.db.items(), key=lambda kv: kv[1].get("label", "").lower()), start=1
         ):
-            print(f"[{i}] {rec.get('label','')} (username: {rec.get('username','')})")
+            if no_index != True:
+                center_text(f"{rec.get('label','')} (username: {rec.get('username','')})")
+            else:
+                entry_num = "[" + str(i) + "]"
+                print(entry_num, end="")
+                center_text(f"{rec.get('label','')} (username: {rec.get('username','')})", " ", len(entry_num))
         self.line_break()
 
     def add_entry(self):
-        print("\033[2J\033[H", end="") # Clear screen
+        self.Password_Manager_Break()
         self.list_entries()
-        print("------- Add New Entry ------")
+        center_text("Add New Entry", "-")
         label = self.timed_input("Label: ").strip()
         self.reset_inactivity_timer()
         username = self.timed_input("Username/Email: ").strip()
@@ -326,7 +392,7 @@ class PasswordManagerCLI:
         self.reset_inactivity_timer()
         if inputStr == "y":
             password = self.random_password()
-            print(f"Generated password.")
+            center_text(f"Generated password.")
         else:
             password = self.timed_getpass("Password: ").strip()
             self.reset_inactivity_timer()
@@ -337,14 +403,14 @@ class PasswordManagerCLI:
             return
         eid = secrets.token_hex(8)
         self.db[eid] = {"label": label, "username": username, "password": password}
-        print(f"Added entry '{label}'.")
+        center_text(f"Added entry '{label}'.")
         self.line_break()
         sleep(1)
 
     def edit_entry(self):
-        print("\033[2J\033[H", end="") # Clear screen
+        self.Password_Manager_Break()
         self.list_entries()
-        print("-------- Edit Entry --------")
+        center_text("Edit Entry", "-")
         try:
             idx = int(self.timed_input("Select entry number to edit: ")) - 1
             self.reset_inactivity_timer()
@@ -369,14 +435,14 @@ class PasswordManagerCLI:
         password = self.timed_getpass("Password (leave blank to keep current): ").strip() or rec["password"]
         self.reset_inactivity_timer()
         self.db[key] = {"label": label, "username": username, "password": password}
-        print(f"Updated '{label}'.")
+        center_text(f"Updated '{label}'.")
         self.line_break()
         sleep(1)
 
     def delete_entry(self):
-        print("\033[2J\033[H", end="") # Clear screen
+        self.Password_Manager_Break()
         self.list_entries()
-        print("------- Delete Entry -------")
+        center_text("Delete Entry", "-")
         try:
             idx = int(self.timed_input("Select entry number to delete: ")) - 1
             self.reset_inactivity_timer()
@@ -402,9 +468,9 @@ class PasswordManagerCLI:
         sleep(1)
 
     def copy_password(self):
-        print("\033[2J\033[H", end="") # Clear screen
+        self.Password_Manager_Break()
         self.list_entries()
-        print("------- Copy Password ------")
+        center_text("Copy Password", "-")
         try:
             idx = int(self.timed_input("Select entry number to copy password: ")) - 1
             self.reset_inactivity_timer()
@@ -426,9 +492,9 @@ class PasswordManagerCLI:
         sleep(1)
 
     def copy_username(self):
-        print("\033[2J\033[H", end="") # Clear screen
+        self.Password_Manager_Break()
         self.list_entries()
-        print("------- Copy Username ------")
+        center_text("Copy Username", "-")
         try:
             idx = int(self.timed_input("Select entry number to copy username: ")) - 1
             self.reset_inactivity_timer()
@@ -446,41 +512,42 @@ class PasswordManagerCLI:
         uname = self.db[key]["username"]
         pyperclip.copy(uname)
         print("Username copied to clipboard.")
-        print("-----------------------------")
+        self.line_break()
         sleep(1)
 
     def menu(self):
+        
         while True:
 
-            if self.lock_event.is_set():
+            if self.lock_event.is_set() and self.autolock_enabled:
                 self.lock_event.clear()
                 self.auto_lock()
 
-            print("\033[2J\033[H", end="")
-            print("------- Password Manager -------")
-            self.list_entries()
+            self.Password_Manager_Break()
+            self.list_entries(False)
             print("""
 - Please choose an option: -
-1. Add entry
-2. Edit entry
-3. Delete entry
-4. Copy username
-5. Copy password
+1. Copy password
+2. Copy username
+3. Add entry
+4. Delete entry
+5. Edit entry
 6. Save
 7. Exit
 """)
+            
             choice = self.timed_input("Select option: ").strip()
             self.reset_inactivity_timer()
             if choice == "1":
-                self.add_entry()
-            elif choice == "2":
-                self.edit_entry()
-            elif choice == "3":
-                self.delete_entry()
-            elif choice == "4":
-                self.copy_username()
-            elif choice == "5":
                 self.copy_password()
+            elif choice == "2":
+                self.copy_username()
+            elif choice == "3":
+                self.add_entry()
+            elif choice == "4":
+                self.delete_entry()
+            elif choice == "5":
+                self.edit_entry()
             elif choice == "6":
                 self.save()
             elif choice == "7":
@@ -493,6 +560,7 @@ class PasswordManagerCLI:
 
 
 def main():
+    print("\033[1;92m", end="")
     parser = argparse.ArgumentParser(description="Encrypted password manager CLI")
     parser.add_argument("db_path", help="Path to encrypted .pwm database file")
     args = parser.parse_args()
@@ -503,5 +571,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()
