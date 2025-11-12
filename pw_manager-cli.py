@@ -17,6 +17,7 @@ import secrets
 import platform
 import argparse
 import threading
+import configparser
 from time import sleep
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
@@ -95,10 +96,37 @@ class PasswordManagerCLI:
         self.db = {}
         self.master_password = None
         self.last_action_time = time.time()
-        self.lock_timeout = 150  # seconds (2m30s)
         self.locked = False
-        self.autolock_enabled = True
         self.lock_event = threading.Event()
+        self.load_config()
+
+    
+
+    def load_config(self):
+        config = configparser.ConfigParser()
+        default_path = os.path.join(os.getcwd(), "config.ini")
+
+        # defaults (safe fallbacks)
+        self.autolock_enabled = True
+        self.lock_timeout = 150
+
+        if not os.path.exists(default_path):
+            print("No config.ini found, using default settings.")
+            return
+
+        config.read(default_path)
+
+        try:
+            # --- Auto-lock settings ---
+            if "AutoLockSettings" in config:
+                lock = config["AutoLockSettings"]
+                self.autolock_enabled = lock.getboolean("Autolock", fallback=self.autolock_enabled)
+                self.lock_timeout = lock.getint("AutolockTime", fallback=self.lock_timeout)
+
+        except Exception as e:
+            print(f"Error reading config.ini: {e}")
+            print("Falling back to defaults.")
+
 
     def reset_inactivity_timer(self):
         self.last_action_time = time.time()
@@ -311,9 +339,8 @@ Exiting...""")
                 sleep(1)
                 self.Password_Manager_Break()
                 self.list_entries()
-                print("""
-- Please choose an option: -
-1. Copy password
+                center_text("Please select an option", "-")
+                print("""1. Copy password
 2. Copy username
 3. Add entry
 4. Delete entry
@@ -525,9 +552,8 @@ Exiting...""")
 
             self.Password_Manager_Break()
             self.list_entries(False)
-            print("""
-- Please choose an option: -
-1. Copy password
+            center_text("Please select an option", "-")
+            print("""1. Copy password
 2. Copy username
 3. Add entry
 4. Delete entry
@@ -535,7 +561,6 @@ Exiting...""")
 6. Save
 7. Exit
 """)
-            
             choice = self.timed_input("Select option: ").strip()
             self.reset_inactivity_timer()
             if choice == "1":
@@ -560,7 +585,7 @@ Exiting...""")
 
 
 def main():
-    print("\033[1;92m", end="")
+    print("\033[1;92m", end="") # turn all text Green
     parser = argparse.ArgumentParser(description="Encrypted password manager CLI")
     parser.add_argument("db_path", help="Path to encrypted .pwm database file")
     args = parser.parse_args()
