@@ -12,7 +12,7 @@ python.exe -m pip install cryptography pyperclip
 ## Usage
 In the same directory as the script
 ```bash
-python pw_manager-cli.py "path\to\file.pwm" 
+python main.py "path\to\file.pwm" 
 ```
 If the file doesnt exist it prompts the user and then creates the file.
 
