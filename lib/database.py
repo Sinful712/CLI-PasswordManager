@@ -1,6 +1,3 @@
-
-
-
 # ---------- Database Module ----------
 class Database:
     def __init__(self):
@@ -57,7 +54,7 @@ class Database:
         if old_path not in self.groups:
             return False
         if new_path in self.groups:
-            return False  # Prevent conflicts
+            return False  # Prevent conflicts and duplicates
         if not new_path.strip():
             return False  # Prevent empty names
 
@@ -77,7 +74,6 @@ class Database:
         for eid, rec in self.entries.items():
             if rec["group"] == old_path or rec["group"].startswith(old_path + "/"):
                 rec["group"] = rec["group"].replace(old_path, new_path, 1)
-
         return True
 
     def delete_group(self, group_path: str, reassign_to="Ungrouped") -> bool:

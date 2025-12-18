@@ -1,7 +1,9 @@
 """
 pw_manager_cli.py
+Version 1.1
 Command-line password manager compatible with the encrypted .pwm database format.
-Modular rewrite for maintainability.
+What's New:
+ - Modular rewrite for maintainability.
 """
 import argparse
 
